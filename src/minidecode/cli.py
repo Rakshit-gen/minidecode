@@ -16,6 +16,7 @@ from .generate import generate_cached, generate_naive
 from .model import count
 from .quality import report
 from .quant import quantize_params
+from .serve import Request, serve
 from .train import train
 
 
@@ -105,6 +106,31 @@ def cmd_quantize(args) -> int:
     return 0
 
 
+def workload(n: int, longest: int, seed: int) -> list[tuple[list[int], int]]:
+    """Mostly short requests with some long ones, like chat traffic."""
+    rng = np.random.default_rng(seed)
+    short = rng.integers(4, max(5, longest // 4), n)
+    long = rng.integers(longest // 2, longest + 1, n)
+    return [(i, int(long[i] if rng.random() < 0.25 else short[i])) for i in range(n)]
+
+
+def cmd_schedule(args) -> int:
+    cfg, params, tok, _ = load(args.model)
+    prompt = list(tok.encode("\n"))
+    jobs = workload(args.requests, cfg.ctx - len(prompt), args.seed)
+    print(f"{len(jobs)} requests, {sum(n for _, n in jobs)} tokens, {args.slots} slots")
+    print(f"{'policy':12} {'time':>8} {'tokens/s':>9} {'steps':>6} {'busy':>6} {'mean done':>10}")
+    for policy in ("static", "continuous"):
+        reqs = [Request(i, prompt, n) for i, n in jobs]
+        serve(params, cfg, [Request(0, prompt, 2)], args.slots, policy)  # warm up
+        r = serve(params, cfg, reqs, args.slots, policy)
+        print(
+            f"{policy:12} {r.seconds * 1000:6.0f}ms {r.tokens / r.seconds:9.0f} {r.steps:6}"
+            f" {r.utilisation:6.0%} {r.mean_latency * 1000:8.0f}ms"
+        )
+    return 0
+
+
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="minidecode", description="A small transformer inference engine in numpy."
@@ -157,6 +183,13 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("-n", "--chars", type=int, default=2000, help="characters to sample")
     s.add_argument("--no-eval", action="store_true", help="skip the quality comparison")
     s.set_defaults(func=cmd_quantize)
+
+    s = sub.add_parser("schedule", help="compare static and continuous batching")
+    s.add_argument("model")
+    s.add_argument("--requests", type=int, default=64)
+    s.add_argument("--slots", type=int, default=8)
+    s.add_argument("--seed", type=int, default=0)
+    s.set_defaults(func=cmd_schedule)
     return p
 
 

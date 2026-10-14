@@ -50,3 +50,12 @@ def test_quantize(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "float32  bits/char" in out and "int4     bits/char" in out
     assert main(["quantize", q, "-o", m + "2"]) == 2
+
+
+def test_schedule(tmp_path, capsys):
+    m = str(tmp_path / "m.npz")
+    main(["train", "-o", m, "--lines", "800", "--steps", "2", "--dim", "16", "--heads", "2", "-q"])
+    capsys.readouterr()
+    assert main(["schedule", m, "--requests", "6", "--slots", "2"]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[0].startswith("6 requests") and out[2].startswith("static") and len(out) == 4
