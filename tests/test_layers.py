@@ -4,6 +4,8 @@ from gradcheck import close, numeric
 from minidecode.layers import (
     attention,
     attention_back,
+    cross_entropy,
+    cross_entropy_back,
     gelu,
     gelu_back,
     layernorm,
@@ -53,3 +55,13 @@ def test_attention_is_causal_and_its_gradient_checks():
 
     assert close(dx, numeric(loss, x))
     assert close(dwqkv, numeric(loss, wqkv)) and close(dwo, numeric(loss, wo))
+
+
+def test_cross_entropy_value_and_gradient():
+    logits = rng.normal(size=(2, 3, 7))
+    targets = rng.integers(0, 7, size=(2, 3))
+    loss, cache = cross_entropy(logits, targets)
+    uniform, _ = cross_entropy(np.zeros((1, 1, 7)), np.array([[2]]))
+    assert np.isclose(uniform, np.log(7))
+    g = numeric(lambda: cross_entropy(logits, targets)[0], logits)
+    assert close(cross_entropy_back(cache), g)

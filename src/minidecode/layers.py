@@ -78,3 +78,18 @@ def attention_back(dy, cache):
     dqkv = np.concatenate([merge(dq), merge(dk), merge(dv)], axis=-1)
     dwqkv = np.einsum("btd,bte->de", x, dqkv)
     return dqkv @ wqkv.T, dwqkv, dwo
+
+
+def cross_entropy(logits, targets):
+    """Mean negative log likelihood of the targets, in nats."""
+    shifted = logits - logits.max(-1, keepdims=True)
+    logp = shifted - np.log(np.exp(shifted).sum(-1, keepdims=True))
+    picked = np.take_along_axis(logp, targets[..., None], -1)[..., 0]
+    return -picked.mean(), (logp, targets)
+
+
+def cross_entropy_back(cache):
+    logp, targets = cache
+    d = np.exp(logp)
+    np.put_along_axis(d, targets[..., None], np.take_along_axis(d, targets[..., None], -1) - 1, -1)
+    return d / targets.size
