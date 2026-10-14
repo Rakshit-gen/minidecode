@@ -14,6 +14,7 @@ from .layers import (
     attention_back,
     cross_entropy,
     cross_entropy_back,
+    flat_t,
     gelu,
     gelu_back,
     layernorm,
@@ -94,15 +95,15 @@ def loss_and_grads(params: dict, cfg: Config, x: np.ndarray, y: np.ndarray):
     loss, ce = cross_entropy(logits, y)
     grads = {k: np.zeros_like(v) for k, v in params.items()}
     dlogits = cross_entropy_back(ce)
-    grads["tok"] += np.einsum("btv,btd->vd", dlogits, h)  # the tied output layer
+    grads["tok"] += flat_t(dlogits, h)  # the tied output layer
     dx, grads["lnf.g"], grads["lnf.b"] = layernorm_back(dlogits @ params["tok"], lnf)
     for i in reversed(range(cfg.layers)):
         ln1, att, ln2, h2, gl, g = caches[i]
         # MLP branch: x = x + gelu(h2 @ up + up_b) @ down + down_b
-        grads[f"{i}.mlp.down"] = np.einsum("btf,btd->fd", g, dx)
+        grads[f"{i}.mlp.down"] = flat_t(g, dx)
         grads[f"{i}.mlp.down_b"] = dx.sum((0, 1))
         du = gelu_back(dx @ params[f"{i}.mlp.down"].T, gl)
-        grads[f"{i}.mlp.up"] = np.einsum("btd,btf->df", h2, du)
+        grads[f"{i}.mlp.up"] = flat_t(h2, du)
         grads[f"{i}.mlp.up_b"] = du.sum((0, 1))
         dh, grads[f"{i}.ln2.g"], grads[f"{i}.ln2.b"] = layernorm_back(
             du @ params[f"{i}.mlp.up"].T, ln2
@@ -112,6 +113,7 @@ def loss_and_grads(params: dict, cfg: Config, x: np.ndarray, y: np.ndarray):
         da, grads[f"{i}.attn.qkv"], grads[f"{i}.attn.out"] = attention_back(dx, att)
         dh, grads[f"{i}.ln1.g"], grads[f"{i}.ln1.b"] = layernorm_back(da, ln1)
         dx = dx + dh
-    np.add.at(grads["tok"], ids, dx)
+    onehot = np.eye(cfg.vocab, dtype=dx.dtype)[ids.reshape(-1)]
+    grads["tok"] += onehot.T @ dx.reshape(-1, cfg.dim)
     grads["pos"][: ids.shape[1]] = dx.sum(0)
     return loss, grads

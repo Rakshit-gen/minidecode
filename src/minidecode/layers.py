@@ -6,6 +6,12 @@ import numpy as np
 EPS = 1e-5
 
 
+def flat_t(a, b):
+    """sum over batch and time of outer(a, b): the weight gradient of a linear
+    layer. One 2D matmul, which BLAS does far faster than einsum."""
+    return a.reshape(-1, a.shape[-1]).T @ b.reshape(-1, b.shape[-1])
+
+
 def layernorm(x, g, b):
     mu = x.mean(-1, keepdims=True)
     rstd = 1.0 / np.sqrt(x.var(-1, keepdims=True) + EPS)
@@ -28,13 +34,13 @@ K = np.sqrt(2 / np.pi)
 
 def gelu(x):
     """The tanh approximation GPT-2 uses."""
-    t = np.tanh(K * (x + 0.044715 * x**3))
+    t = np.tanh(K * (x + 0.044715 * x * x * x))
     return 0.5 * x * (1 + t), (x, t)
 
 
 def gelu_back(dy, cache):
     x, t = cache
-    return dy * (0.5 * (1 + t) + 0.5 * x * (1 - t**2) * K * (1 + 3 * 0.044715 * x**2))
+    return dy * (0.5 * (1 + t) + 0.5 * x * (1 - t**2) * K * (1 + 3 * 0.044715 * x * x))
 
 
 def softmax(x, axis=-1):
@@ -68,7 +74,7 @@ def attention(x, wqkv, wo, n_heads):
 
 def attention_back(dy, cache):
     x, wqkv, wo, q, k, v, p, o, scale, n_heads = cache
-    dwo = np.einsum("btd,bte->de", o, dy)
+    dwo = flat_t(o, dy)
     do = heads(dy @ wo.T, n_heads)
     dp = do @ v.transpose(0, 1, 3, 2)
     dv = p.transpose(0, 1, 3, 2) @ do
@@ -76,7 +82,7 @@ def attention_back(dy, cache):
     dq = ds @ k
     dk = ds.transpose(0, 1, 3, 2) @ q
     dqkv = np.concatenate([merge(dq), merge(dk), merge(dv)], axis=-1)
-    dwqkv = np.einsum("btd,bte->de", x, dqkv)
+    dwqkv = flat_t(x, dqkv)
     return dqkv @ wqkv.T, dwqkv, dwo
 
 
