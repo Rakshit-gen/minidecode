@@ -91,10 +91,15 @@ def handler(worker: Worker):
         def do_POST(self):
             if self.path != "/generate":
                 return self._send(404, {"error": "not found"})
-            length = int(self.headers.get("Content-Length") or 0)
-            if length > MAX_BODY:
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                length = -1
+            if not 0 <= length <= MAX_BODY:
+                # read(-1) would wait for the client to hang up
                 self.close_connection = True
-                return self._send(413, {"error": f"body over {MAX_BODY} bytes"})
+                code = 413 if length > MAX_BODY else 400
+                return self._send(code, {"error": "Content-Length must be 0 to 65536"})
             try:
                 body = json.loads(self.rfile.read(length))
                 temperature = body.get("temperature")

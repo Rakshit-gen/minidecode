@@ -66,3 +66,7 @@ def test_huge_body_is_refused_without_reading_it(url):
     with pytest.raises(urllib.error.HTTPError) as e:
         urllib.request.urlopen(req, timeout=10)
     assert e.value.code == 413
+    req.headers["Content-length"] = "-1"
+    with pytest.raises(urllib.error.HTTPError) as e:
+        urllib.request.urlopen(req, timeout=10)
+    assert e.value.code == 400 and b"Content-Length" in e.value.read()
