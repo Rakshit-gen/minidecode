@@ -64,3 +64,29 @@ def _dequantize_int4(t: QTensor) -> np.ndarray:
     q = np.where(q > 7, q - 16, q)  # back from 4-bit two's complement
     g = q.reshape(rows // t.group, t.group, cols).astype(np.float32)
     return (g * t.scale[:, None].astype(np.float32)).reshape(rows, cols)
+
+
+def quantize_params(params: dict, bits: int) -> dict:
+    """Quantize every matrix; leave norms and biases as they are. With bits=4,
+    a matrix whose rows don't split into groups of 32 (the token table, whose
+    rows are the vocabulary) gets int8 instead."""
+    if bits not in (4, 8):
+        raise ValueError(f"bits must be 4 or 8, not {bits}")
+    out = {}
+    for k, v in params.items():
+        if v.ndim != 2:
+            out[k] = v
+        elif bits == 4 and v.shape[0] % 32 == 0:
+            out[k] = quantize_int4(v)
+        else:  # int8, or an int4 request for a matrix whose rows don't split into groups
+            out[k] = quantize_int8(v)
+    return out
+
+
+def dequantize_params(params: dict) -> dict:
+    return {k: dequantize(v) if isinstance(v, QTensor) else v for k, v in params.items()}
+
+
+def size(params: dict) -> int:
+    """Bytes the weights take as stored."""
+    return sum(v.nbytes for v in params.values())
