@@ -46,7 +46,9 @@ def step(params: dict, cfg: Config, ids: np.ndarray, cache: KVCache) -> np.ndarr
         q, k, v = (heads(a, cfg.heads) for a in np.split(h @ params[f"{i}.attn.qkv"], 3, -1))
         cache.k[i][:, :, start:end] = k
         cache.v[i][:, :, start:end] = v
-        keys, values = cache.k[i][:, :, :end], cache.v[i][:, :, :end]
+        # A float16 cache is widened back for the math, so only storage shrinks.
+        keys = cache.k[i][:, :, :end].astype(x.dtype, copy=False)
+        values = cache.v[i][:, :, :end].astype(x.dtype, copy=False)
         scores = q @ keys.transpose(0, 1, 3, 2) / np.sqrt(q.shape[-1])
         p = softmax(np.where(mask, scores, -np.inf))
         x = x + merge(p @ values) @ params[f"{i}.attn.out"]

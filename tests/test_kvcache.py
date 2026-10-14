@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from minidecode.generate import generate_cached
 from minidecode.kvcache import KVCache, step
 from minidecode.model import Config, forward, init
 
@@ -29,3 +30,10 @@ def test_truncate_rewinds_and_overflow_is_refused():
         step(P, CFG, IDS[:1, :7], cache)
     with pytest.raises(ValueError, match="can't truncate"):
         cache.truncate(7)
+
+
+def test_float16_cache_halves_memory_and_keeps_greedy_output():
+    assert KVCache(CFG, dtype=np.float16).nbytes() * 2 == KVCache(CFG).nbytes()
+    a = generate_cached(P, CFG, [1, 2], 10, temperature=0)
+    b = generate_cached(P, CFG, [1, 2], 10, temperature=0, kv_dtype=np.float16)
+    assert a == b

@@ -13,6 +13,7 @@ from .bench import table, timed
 from .checkpoint import load, save
 from .corpus import generate
 from .generate import generate_cached, generate_naive
+from .kvcache import KVCache
 from .model import count
 from .prefix import PrefixCache
 from .quality import report
@@ -86,9 +87,17 @@ def cmd_bench(args) -> int:
     rows = [
         timed("naive (full rerun)", n, lambda: generate_naive(params, cfg, prompt, n)),
         timed("kv cache", n, lambda: generate_cached(params, cfg, prompt, n)),
+        timed(
+            "kv cache, float16",
+            n,
+            lambda: generate_cached(params, cfg, prompt, n, kv_dtype=np.float16),
+        ),
     ]
     print(f"{n} tokens, context {cfg.ctx}, best of 3")
     print(table(rows), end="")
+    for dtype in (np.float32, np.float16):
+        size = KVCache(cfg, dtype=dtype).nbytes()
+        print(f"kv cache memory per sequence, {np.dtype(dtype).name}: {size / 1024:.0f} KiB")
     steps = cfg.ctx - 1  # one prompt token, then fill the context
     batch_rows = [
         timed(

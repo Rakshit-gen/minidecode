@@ -30,16 +30,18 @@ def generate_cached(
     top_p=1.0,
     stop: int | None = None,
     stop_count: int = 1,
+    kv_dtype=np.float32,
 ):
     """Decode with a KV cache: the prompt once, then one token per step, for at
     most `steps` tokens, or until token `stop` has come out `stop_count` times.
+    kv_dtype=np.float16 halves the cache's memory.
 
     Positions are learned, so the cache can't simply slide. When it is full,
     the last half of the context is run through again as a fresh prompt, and
     decoding carries on from there."""
     rng = rng or np.random.default_rng(0)
     ids = list(prompt)
-    cache = KVCache(cfg)
+    cache = KVCache(cfg, dtype=kv_dtype)
     logits = step(params, cfg, np.array(ids[-cfg.ctx :])[None], cache)[0, -1]
     seen = 0
     for n in range(steps):
@@ -48,7 +50,7 @@ def generate_cached(
         if n + 1 == steps or seen == stop_count:
             break
         if cache.length == cfg.ctx:
-            cache = KVCache(cfg)
+            cache = KVCache(cfg, dtype=kv_dtype)
             logits = step(params, cfg, np.array(ids[-(cfg.ctx // 2) :])[None], cache)[0, -1]
         else:
             logits = step(params, cfg, np.array([[ids[-1]]]), cache)[0, -1]
