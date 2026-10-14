@@ -31,3 +31,11 @@ def test_generate_and_eval(tmp_path, capsys):
         "lines_checked",
     }
     assert main(["generate", m, "-p", "€"]) == 2
+
+
+def test_bench_runs(tmp_path, capsys):
+    m = str(tmp_path / "m.npz")
+    main(["train", "-o", m, "--lines", "800", "--steps", "2", "--dim", "16", "--heads", "2", "-q"])
+    capsys.readouterr()
+    assert main(["bench", m, "-n", "10"]) == 0
+    assert "kv cache" in capsys.readouterr().out

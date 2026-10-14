@@ -7,9 +7,10 @@ import sys
 import numpy as np
 
 from . import __version__
+from .bench import table, timed
 from .checkpoint import load, save
 from .corpus import generate
-from .generate import generate_cached
+from .generate import generate_cached, generate_naive
 from .model import count
 from .quality import report
 from .train import train
@@ -60,6 +61,19 @@ def cmd_eval(args) -> int:
     return 0
 
 
+def cmd_bench(args) -> int:
+    cfg, params, tok, _ = load(args.model)
+    prompt = tok.encode("\n")
+    n = args.tokens
+    rows = [
+        timed("naive (full rerun)", n, lambda: generate_naive(params, cfg, prompt, n)),
+        timed("kv cache", n, lambda: generate_cached(params, cfg, prompt, n)),
+    ]
+    print(f"{n} tokens, context {cfg.ctx}, best of 3")
+    print(table(rows), end="")
+    return 0
+
+
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="minidecode", description="A small transformer inference engine in numpy."
@@ -96,6 +110,11 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--seed", type=int, default=0)
     s.add_argument("--json", action="store_true")
     s.set_defaults(func=cmd_eval)
+
+    s = sub.add_parser("bench", help="time the decoders against each other")
+    s.add_argument("model")
+    s.add_argument("-n", "--tokens", type=int, default=200)
+    s.set_defaults(func=cmd_bench)
     return p
 
 
