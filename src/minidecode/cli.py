@@ -112,11 +112,6 @@ def cmd_bench(args) -> int:
             lambda: generate_cached(params, cfg, prompt, n, kv_dtype=np.float16),
         ),
     ]
-    print(f"{n} tokens, context {cfg.ctx}, best of 3")
-    print(table(rows), end="")
-    for dtype in (np.float32, np.float16):
-        size = KVCache(cfg, dtype=dtype).nbytes()
-        print(f"kv cache memory per sequence, {np.dtype(dtype).name}: {size / 1024:.0f} KiB")
     steps = cfg.ctx - 1  # one prompt token, then fill the context
     batch_rows = [
         timed(
@@ -126,6 +121,23 @@ def cmd_bench(args) -> int:
         )
         for b in args.batch
     ]
+    kv = {np.dtype(d).name: KVCache(cfg, dtype=d).nbytes() for d in (np.float32, np.float16)}
+    if args.json:
+        rows_json = [
+            {
+                "name": r.name,
+                "tokens": r.tokens,
+                "seconds": round(r.seconds, 6),
+                "tokens_per_s": round(r.tokens_per_s, 1),
+            }
+            for r in rows + batch_rows
+        ]
+        print(json.dumps({"tokens": n, "ctx": cfg.ctx, "rows": rows_json, "kv_bytes": kv}))
+        return 0
+    print(f"{n} tokens, context {cfg.ctx}, best of 3")
+    print(table(rows), end="")
+    for name, size in kv.items():
+        print(f"kv cache memory per sequence, {name}: {size / 1024:.0f} KiB")
     print(f"\nbatched decoding, {steps} tokens per sequence")
     print(table(batch_rows), end="")
     return 0
@@ -293,6 +305,7 @@ def parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_info)
 
     s = sub.add_parser("bench", help="time the decoders against each other")
+    s.add_argument("--json", action="store_true")
     s.add_argument("model")
     s.add_argument("-n", "--tokens", type=int, default=200)
     s.add_argument(

@@ -94,3 +94,13 @@ def test_info(tmp_path, capsys):
     assert main(["info", m]) == 0
     out = capsys.readouterr().out
     assert "32-bit" in out and "dim 16" in out and "5 steps" in out
+
+
+def test_bench_json(tmp_path, capsys):
+    m = str(tmp_path / "m.npz")
+    main(["train", "-o", m, "--lines", "800", "--steps", "2", "--dim", "16", "--heads", "2", "-q"])
+    capsys.readouterr()
+    assert main(["bench", m, "-n", "5", "--batch", "2", "--json"]) == 0
+    r = json.loads(capsys.readouterr().out)
+    assert [x["name"] for x in r["rows"]][-1] == "batch of 2"
+    assert r["kv_bytes"]["float32"] == 2 * r["kv_bytes"]["float16"]
