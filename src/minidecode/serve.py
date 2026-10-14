@@ -22,6 +22,9 @@ class Request:
     id: int
     prompt: list[int]
     max_new: int
+    temperature: float | None = None  # None: the engine's
+    stop: int | None = None  # finish early after this token...
+    stop_count: int = 1  # ...has come out this many times
     out: list[int] = field(default_factory=list)
     started: float = 0.0  # when its prefill ran
     first_token: float = 0.0
@@ -56,6 +59,87 @@ class Run:
         return float(np.mean([r.finished - self.start for r in self.requests]))
 
 
+class Engine:
+    """The scheduling loop, one step at a time, so requests can be added while
+    it runs. `serve` drives it over a fixed list; the HTTP server drives it
+    from a queue."""
+
+    def __init__(
+        self,
+        params,
+        cfg: Config,
+        slots: int,
+        policy="continuous",
+        temperature=0.0,
+        seed=0,
+        prefix=None,
+    ):
+        if policy not in ("continuous", "static"):
+            raise ValueError(f"unknown policy {policy!r}")
+        self.params, self.cfg, self.policy, self.prefix = params, cfg, policy, prefix
+        self.temperature = temperature
+        self.rng = np.random.default_rng(seed)
+        self.waiting: deque[Request] = deque()
+        self.cache = BatchCache(cfg, slots)
+        self.owner: list[Request | None] = [None] * slots
+        self.logits = np.zeros((slots, cfg.vocab), np.float32)
+        self.steps = self.busy_slots = self.offered = 0
+
+    def submit(self, r: Request) -> None:
+        if len(r.prompt) + r.max_new > self.cfg.ctx:
+            raise ValueError(f"request {r.id} needs more than the context of {self.cfg.ctx}")
+        if not r.prompt or r.max_new < 1:
+            raise ValueError(f"request {r.id} needs a prompt and max_new of at least 1")
+        self.waiting.append(r)
+
+    @property
+    def idle(self) -> bool:
+        return not self.waiting and not any(self.owner)
+
+    def _admit(self) -> None:
+        free = [i for i, r in enumerate(self.owner) if r is None]
+        if not (self.waiting and free):
+            return
+        if self.policy == "static" and len(free) < len(self.owner):
+            return  # static: wait until the whole batch is done
+        for i in free:
+            if not self.waiting:
+                break
+            r = self.waiting.popleft()
+            r.started = time.perf_counter()
+            self.logits[i] = self.cache.prefill(self.params, i, r.prompt, self.prefix)
+            self.owner[i] = r
+
+    def step(self) -> list[Request]:
+        """Admit what fits, emit one token per busy slot, and return the
+        requests that finished."""
+        self._admit()
+        ids = np.zeros(len(self.owner), dtype=np.int64)
+        done = []
+        now = time.perf_counter()
+        for i, r in enumerate(self.owner):
+            if r is None:
+                continue
+            t = self.temperature if r.temperature is None else r.temperature
+            ids[i] = pick(self.logits[i], self.rng, t)
+            if not r.out:
+                r.first_token = now
+            r.out.append(int(ids[i]))
+            self.busy_slots += 1
+            if len(r.out) == r.max_new or (
+                r.stop is not None and r.out.count(r.stop) >= r.stop_count
+            ):
+                r.finished = now
+                self.owner[i] = None
+                done.append(r)
+        self.offered += len(self.owner)
+        still = np.array([r is not None for r in self.owner])
+        if still.any():
+            self.logits = decode(self.params, self.cfg, ids, self.cache, active=still)
+            self.steps += 1
+        return done
+
+
 def serve(
     params,
     cfg: Config,
@@ -67,44 +151,11 @@ def serve(
     prefix=None,
 ) -> Run:
     """Run every request to completion. All requests are queued at the start."""
-    if policy not in ("continuous", "static"):
-        raise ValueError(f"unknown policy {policy!r}")
+    engine = Engine(params, cfg, slots, policy, temperature, seed, prefix)
     for r in requests:
-        if len(r.prompt) + r.max_new > cfg.ctx:
-            raise ValueError(f"request {r.id} needs more than the context of {cfg.ctx}")
-    rng = np.random.default_rng(seed)
-    waiting = deque(requests)
-    cache = BatchCache(cfg, slots)
-    owner: list[Request | None] = [None] * slots
-    logits = np.zeros((slots, cfg.vocab), np.float32)
+        engine.submit(r)
     start = time.perf_counter()
-    steps = useful = total = 0
-    while waiting or any(owner):
-        free = [i for i, r in enumerate(owner) if r is None]
-        if waiting and free and (policy == "continuous" or len(free) == slots):
-            for i in free:
-                if not waiting:
-                    break
-                r = waiting.popleft()
-                r.started = time.perf_counter()
-                logits[i] = cache.prefill(params, i, r.prompt, prefix)
-                owner[i] = r
-        active = np.array([r is not None for r in owner])
-        ids = pick(logits, rng, temperature)
-        now = time.perf_counter()
-        for i, r in enumerate(owner):
-            if r is None:
-                continue
-            if not r.out:
-                r.first_token = now
-            r.out.append(int(ids[i]))
-            if len(r.out) == r.max_new:
-                r.finished = now
-                owner[i] = None
-        still = np.array([r is not None for r in owner])
-        useful += int(active.sum())
-        total += slots
-        if still.any():
-            logits = decode(params, cfg, ids, cache, active=still)
-            steps += 1
-    return Run(requests, start, time.perf_counter() - start, steps, useful, total)
+    while not engine.idle:
+        engine.step()
+    seconds = time.perf_counter() - start
+    return Run(requests, start, seconds, engine.steps, engine.busy_slots, engine.offered)
