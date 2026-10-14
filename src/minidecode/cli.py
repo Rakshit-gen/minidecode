@@ -8,6 +8,7 @@ import sys
 import numpy as np
 
 from . import __version__
+from .batch import generate_batch
 from .bench import table, timed
 from .checkpoint import load, save
 from .corpus import generate
@@ -73,6 +74,17 @@ def cmd_bench(args) -> int:
     ]
     print(f"{n} tokens, context {cfg.ctx}, best of 3")
     print(table(rows), end="")
+    steps = cfg.ctx - 1  # one prompt token, then fill the context
+    batch_rows = [
+        timed(
+            f"batch of {b}",
+            b * steps,
+            lambda b=b: generate_batch(params, cfg, [prompt] * b, steps),
+        )
+        for b in args.batch
+    ]
+    print(f"\nbatched decoding, {steps} tokens per sequence")
+    print(table(batch_rows), end="")
     return 0
 
 
@@ -133,6 +145,9 @@ def parser() -> argparse.ArgumentParser:
     s = sub.add_parser("bench", help="time the decoders against each other")
     s.add_argument("model")
     s.add_argument("-n", "--tokens", type=int, default=200)
+    s.add_argument(
+        "--batch", type=int, nargs="+", default=[1, 4, 16, 64], help="batch sizes to time"
+    )
     s.set_defaults(func=cmd_bench)
 
     s = sub.add_parser("quantize", help="write an int8 or int4 copy of a model")

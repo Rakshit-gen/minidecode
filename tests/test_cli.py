@@ -37,8 +37,9 @@ def test_bench_runs(tmp_path, capsys):
     m = str(tmp_path / "m.npz")
     main(["train", "-o", m, "--lines", "800", "--steps", "2", "--dim", "16", "--heads", "2", "-q"])
     capsys.readouterr()
-    assert main(["bench", m, "-n", "10"]) == 0
-    assert "kv cache" in capsys.readouterr().out
+    assert main(["bench", m, "-n", "10", "--batch", "1", "2"]) == 0
+    out = capsys.readouterr().out
+    assert "kv cache" in out and "batch of 2" in out
 
 
 def test_quantize(tmp_path, capsys):

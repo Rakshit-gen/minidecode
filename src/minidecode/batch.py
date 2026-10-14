@@ -11,6 +11,7 @@ import numpy as np
 from .kvcache import KVCache, step
 from .layers import gelu, heads, layernorm, merge, softmax
 from .model import Config
+from .sampling import pick
 
 
 class BatchCache:
@@ -69,3 +70,18 @@ def decode(params, cfg: Config, ids: np.ndarray, cache: BatchCache, active=None)
     cache.lengths[active] += 1
     h, _ = layernorm(x[:, 0], params["lnf.g"], params["lnf.b"])
     return h @ params["tok"].T
+
+
+def generate_batch(params, cfg: Config, prompts, steps: int, rng=None, temperature=1.0):
+    """Static batching: start every prompt together and decode `steps` tokens
+    for each. Stops early if a slot fills its context."""
+    rng = rng or np.random.default_rng(0)
+    cache = BatchCache(cfg, len(prompts))
+    logits = np.stack([cache.prefill(params, i, p) for i, p in enumerate(prompts)])
+    out = np.zeros((len(prompts), steps), dtype=np.int64)
+    for n in range(steps):
+        out[:, n] = pick(logits, rng, temperature)
+        if n + 1 == steps or (cache.lengths >= cfg.ctx).any():
+            return out[:, : n + 1]
+        logits = decode(params, cfg, out[:, n], cache)
+    return out

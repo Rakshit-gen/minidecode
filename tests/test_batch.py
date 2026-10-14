@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from minidecode.batch import BatchCache, decode
+from minidecode.batch import BatchCache, decode, generate_batch
 from minidecode.generate import generate_cached
 from minidecode.model import Config, init
 
@@ -39,3 +39,8 @@ def test_idle_slots_are_left_alone_and_full_slots_refused():
     cache.prefill(P, 0, list(range(1, 9)) * 2)
     with pytest.raises(ValueError, match="slot is full"):
         decode(P, CFG, np.array([1, 1]), cache)
+
+
+def test_generate_batch_stops_at_a_full_context():
+    out = generate_batch(P, CFG, [[1], [2, 3]], 50, temperature=0)
+    assert out.shape == (2, 15)  # the longer prompt fills 16 positions after 14 more
