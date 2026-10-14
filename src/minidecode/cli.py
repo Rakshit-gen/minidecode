@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import signal
 import sys
 
 import numpy as np
@@ -214,6 +215,7 @@ def cmd_serve(args) -> int:
     )
     host, port = httpd.server_address[:2]
     print(f"serving {args.model} on http://{host}:{port} with {args.slots} slots", flush=True)
+    signal.signal(signal.SIGTERM, signal.default_int_handler)  # stop the same way as Ctrl-C
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
