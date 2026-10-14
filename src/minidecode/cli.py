@@ -80,6 +80,22 @@ def cmd_eval(args) -> int:
     return 0
 
 
+def cmd_info(args) -> int:
+    cfg, params, tok, meta = load(args.model)
+    kv = KVCache(cfg).nbytes()
+    print(f"{args.model}  ({os.path.getsize(args.model) / 1024:.0f} KiB on disk)")
+    print(f"weights      {meta.get('bits', 32)}-bit, {count(params):,} parameters")
+    print(f"shape        {cfg.layers} layers, dim {cfg.dim}, {cfg.heads} heads, context {cfg.ctx}")
+    print(f"vocabulary   {cfg.vocab} characters")
+    print(f"KV cache     {kv / 1024:.0f} KiB per sequence at full context")
+    if "steps" in meta:
+        print(
+            f"trained      {meta['steps']} steps on {meta.get('lines', '?')} lines in"
+            f" {meta.get('seconds', 0):.1f} s, val loss {meta['val_loss']:.3f}"
+        )
+    return 0
+
+
 def cmd_bench(args) -> int:
     cfg, params, tok, _ = load(args.model)
     prompt = tok.encode("\n")
@@ -267,6 +283,10 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--seed", type=int, default=0)
     s.add_argument("--json", action="store_true")
     s.set_defaults(func=cmd_eval)
+
+    s = sub.add_parser("info", help="describe a checkpoint")
+    s.add_argument("model")
+    s.set_defaults(func=cmd_info)
 
     s = sub.add_parser("bench", help="time the decoders against each other")
     s.add_argument("model")

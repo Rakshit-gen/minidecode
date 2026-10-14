@@ -84,3 +84,12 @@ def test_serve_command_is_wired_up():
 
     args = parser().parse_args(["serve", "m.npz", "--port", "0", "--slots", "2"])
     assert (args.port, args.slots, args.func.__name__) == (0, 2, "cmd_serve")
+
+
+def test_info(tmp_path, capsys):
+    m = str(tmp_path / "m.npz")
+    main(["train", "-o", m, "--lines", "800", "--steps", "5", "--dim", "16", "--heads", "2", "-q"])
+    capsys.readouterr()
+    assert main(["info", m]) == 0
+    out = capsys.readouterr().out
+    assert "32-bit" in out and "dim 16" in out and "5 steps" in out
