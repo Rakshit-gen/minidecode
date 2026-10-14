@@ -1,7 +1,14 @@
 import numpy as np
 from gradcheck import close, numeric
 
-from minidecode.layers import gelu, gelu_back, layernorm, layernorm_back
+from minidecode.layers import (
+    attention,
+    attention_back,
+    gelu,
+    gelu_back,
+    layernorm,
+    layernorm_back,
+)
 
 rng = np.random.default_rng(0)
 
@@ -27,3 +34,22 @@ def test_gelu_gradient_checks():
     _, cache = gelu(x)
     assert close(gelu_back(w, cache), numeric(lambda: (gelu(x)[0] * w).sum(), x))
     assert abs(gelu(np.array(3.0))[0] - 2.9964) < 1e-4
+
+
+def test_attention_is_causal_and_its_gradient_checks():
+    D, H = 8, 2
+    x = rng.normal(size=(2, 5, D))
+    wqkv, wo = rng.normal(size=(D, 3 * D)) * 0.3, rng.normal(size=(D, D)) * 0.3
+    y, cache = attention(x, wqkv, wo, H)
+    changed = x.copy()
+    changed[:, 3:] += 1.0  # the future changes...
+    assert np.allclose(attention(changed, wqkv, wo, H)[0][:, :3], y[:, :3])  # ...the past doesn't
+
+    w = rng.normal(size=y.shape)
+    dx, dwqkv, dwo = attention_back(w, cache)
+
+    def loss():
+        return (attention(x, wqkv, wo, H)[0] * w).sum()
+
+    assert close(dx, numeric(loss, x))
+    assert close(dwqkv, numeric(loss, wqkv)) and close(dwo, numeric(loss, wo))

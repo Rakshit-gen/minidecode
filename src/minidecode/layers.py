@@ -35,3 +35,46 @@ def gelu(x):
 def gelu_back(dy, cache):
     x, t = cache
     return dy * (0.5 * (1 + t) + 0.5 * x * (1 - t**2) * K * (1 + 3 * 0.044715 * x**2))
+
+
+def softmax(x, axis=-1):
+    e = np.exp(x - x.max(axis, keepdims=True))
+    return e / e.sum(axis, keepdims=True)
+
+
+def heads(x, n):
+    """(B, T, D) -> (B, n, T, D/n)"""
+    B, T, D = x.shape
+    return x.reshape(B, T, n, D // n).transpose(0, 2, 1, 3)
+
+
+def merge(x):
+    """(B, n, T, d) -> (B, T, n*d)"""
+    B, n, T, d = x.shape
+    return x.transpose(0, 2, 1, 3).reshape(B, T, n * d)
+
+
+def attention(x, wqkv, wo, n_heads):
+    """Causal multi-head self-attention, projections included."""
+    T = x.shape[1]
+    q, k, v = (heads(a, n_heads) for a in np.split(x @ wqkv, 3, axis=-1))
+    scale = 1.0 / np.sqrt(q.shape[-1])
+    scores = q @ k.transpose(0, 1, 3, 2) * scale
+    scores = np.where(np.tri(T, dtype=bool), scores, -np.inf)
+    p = softmax(scores)
+    o = merge(p @ v)
+    return o @ wo, (x, wqkv, wo, q, k, v, p, o, scale, n_heads)
+
+
+def attention_back(dy, cache):
+    x, wqkv, wo, q, k, v, p, o, scale, n_heads = cache
+    dwo = np.einsum("btd,bte->de", o, dy)
+    do = heads(dy @ wo.T, n_heads)
+    dp = do @ v.transpose(0, 1, 3, 2)
+    dv = p.transpose(0, 1, 3, 2) @ do
+    ds = p * (dp - (dp * p).sum(-1, keepdims=True)) * scale  # masked entries have p = 0
+    dq = ds @ k
+    dk = ds.transpose(0, 1, 3, 2) @ q
+    dqkv = np.concatenate([merge(dq), merge(dk), merge(dv)], axis=-1)
+    dwqkv = np.einsum("btd,bte->de", x, dqkv)
+    return dqkv @ wqkv.T, dwqkv, dwo
