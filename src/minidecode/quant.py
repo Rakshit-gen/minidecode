@@ -1,6 +1,8 @@
 """Weight quantization.
 
 int8: one scale per output column, weights rounded to -127..127.
+int4: one scale per group of 32 input rows in each column, weights rounded
+to -8..7 and packed two to a byte.
 Only the matrices are quantized; norms and biases are a tiny share of the
 model and stay float. Weights are dequantized when a model is loaded, so this
 saves disk and download size, not compute: numpy has no fast int4 or int8
@@ -35,4 +37,30 @@ def quantize_int8(w: np.ndarray) -> QTensor:
 def dequantize(t: QTensor) -> np.ndarray:
     if t.bits == 8:
         return t.q.astype(np.float32) * t.scale.astype(np.float32)
+    if t.bits == 4:
+        return _dequantize_int4(t)
     raise ValueError(f"unsupported bits: {t.bits}")
+
+
+def quantize_int4(w: np.ndarray, group: int = 32) -> QTensor:
+    rows, cols = w.shape
+    if rows % group or rows % 2:
+        raise ValueError(f"{rows} rows don't split into groups of {group}")
+    g = w.reshape(rows // group, group, cols)
+    scale = np.abs(g).max(1) / 7  # (groups, cols)
+    scale = np.where(scale == 0, 1, scale).astype(np.float16)
+    q = np.clip(np.round(g / scale[:, None].astype(np.float32)), -8, 7).astype(np.int8)
+    nibbles = (q.reshape(rows, cols) & 0x0F).astype(np.uint8)
+    packed = nibbles[0::2] | (nibbles[1::2] << 4)  # row pairs share a byte
+    return QTensor(4, packed, scale, w.shape, group)
+
+
+def _dequantize_int4(t: QTensor) -> np.ndarray:
+    rows, cols = t.shape
+    low = (t.q & 0x0F).astype(np.int8)
+    high = (t.q >> 4).astype(np.int8)
+    q = np.empty((rows, cols), np.int8)
+    q[0::2], q[1::2] = low, high
+    q = np.where(q > 7, q - 16, q)  # back from 4-bit two's complement
+    g = q.reshape(rows // t.group, t.group, cols).astype(np.float32)
+    return (g * t.scale[:, None].astype(np.float32)).reshape(rows, cols)
