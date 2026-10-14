@@ -37,12 +37,16 @@ def line(rng: random.Random, seconds: int) -> str:
     return f"{h:02}:{m:02}:{s:02} {method} {path} {status} {ms}ms"
 
 
-def generate(lines: int, seed: int = 0) -> str:
-    """`lines` log lines, one per line, with the clock moving forward."""
+def generate(lines: int, seed: int = 0, block: int = 200) -> str:
+    """`lines` log lines. Every `block` lines the clock jumps to a random time
+    of day and moves forward from there, so any stretch of the text covers
+    the whole day. (One clock running through would put hours in the
+    validation split that training never saw.)"""
     rng = random.Random(seed)
-    seconds = rng.randint(0, 86399)
     out = []
-    for _ in range(lines):
+    for i in range(lines):
+        if i % block == 0:
+            seconds = rng.randint(0, 86399)
         seconds += rng.choice((0, 0, 1, 1, 2, 3))
         out.append(line(rng, seconds))
     return "\n".join(out) + "\n"

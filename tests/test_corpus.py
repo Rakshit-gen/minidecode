@@ -14,5 +14,10 @@ def test_lines_have_the_log_shape():
 
 def test_same_seed_same_text_and_clock_moves_forward():
     assert generate(50, seed=3) == generate(50, seed=3) != generate(50, seed=4)
-    times = [x[:8] for x in generate(200, seed=5).splitlines()]
+    times = [x[:8] for x in generate(100, seed=5, block=100).splitlines()]
     assert times == sorted(times)  # this seed starts well clear of midnight
+
+
+def test_blocks_spread_over_the_day():
+    hours = {x[:2] for x in generate(10000, seed=6).splitlines()}
+    assert len(hours) >= 18
