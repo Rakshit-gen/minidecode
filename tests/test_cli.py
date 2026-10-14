@@ -62,6 +62,8 @@ def test_schedule(tmp_path, capsys):
     assert main(["schedule", m, "--requests", "6", "--slots", "2", "--header", "12:00:00 GET"]) == 0
     out = capsys.readouterr().out
     assert "continuous + prefix" in out and "reused" in out
+    assert main(["schedule", m, "--header", "1" * 40]) == 2
+    assert "use a shorter --header" in capsys.readouterr().err
 
 
 def test_spec(tmp_path, capsys):

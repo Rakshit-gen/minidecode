@@ -125,6 +125,11 @@ def cmd_schedule(args) -> int:
         return list(tok.encode(f"{header}\n{i % 24:02}:" if header else "\n"))
 
     longest = max(len(prompt(i)) for i in range(args.requests))
+    if cfg.ctx - longest < 8:
+        raise ValueError(
+            f"prompts of {longest} characters leave under 8 to generate in a context of"
+            f" {cfg.ctx}; use a shorter --header"
+        )
     jobs = workload(args.requests, cfg.ctx - longest, args.seed)
     print(f"{len(jobs)} requests, {sum(n for _, n in jobs)} tokens, {args.slots} slots")
     print(
