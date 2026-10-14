@@ -9,6 +9,7 @@ checked mechanically, which gives a quality measure beyond perplexity.
 """
 
 import random
+import re
 
 # path template -> (methods, typical latency in ms)
 ENDPOINTS = {
@@ -50,3 +51,41 @@ def generate(lines: int, seed: int = 0, block: int = 200) -> str:
         seconds += rng.choice((0, 0, 1, 1, 2, 3))
         out.append(line(rng, seconds))
     return "\n".join(out) + "\n"
+
+
+LINE = re.compile(r"(\d\d):(\d\d):(\d\d) ([A-Z]+) (\S+) (\d{3}) (\d+)ms")
+
+
+def _template(path: str) -> str | None:
+    if path in ENDPOINTS:
+        return path
+    head, _, last = path.rpartition("/")
+    if last.isdigit() and 1 <= int(last) <= 9999 and f"{head}/{{id}}" in ENDPOINTS:
+        return f"{head}/{{id}}"
+    return None
+
+
+def problem(line: str) -> str | None:
+    """Why a line could not have come from the generator, or None if it could."""
+    m = LINE.fullmatch(line)
+    if not m:
+        return "not a log line"
+    h, mi, s, method, path, status, _ = m.groups()
+    if int(h) > 23 or int(mi) > 59 or int(s) > 59:
+        return "bad time"
+    template = _template(path)
+    if template is None:
+        return "unknown path"
+    if method not in ENDPOINTS[template][0]:
+        return f"{method} not used on {template}"
+    if int(status) not in (OK[method], *ERRORS):
+        return f"status {status} after {method}"
+    return None
+
+
+def valid_rate(text: str) -> float:
+    """Share of complete lines (ending in a newline) that pass `problem`."""
+    lines = text.split("\n")[:-1]
+    if not lines:
+        return 0.0
+    return sum(problem(x) is None for x in lines) / len(lines)
