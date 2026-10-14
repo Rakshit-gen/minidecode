@@ -9,7 +9,16 @@ from dataclasses import asdict, dataclass
 
 import numpy as np
 
-from .layers import attention, gelu, layernorm
+from .layers import (
+    attention,
+    attention_back,
+    cross_entropy,
+    cross_entropy_back,
+    gelu,
+    gelu_back,
+    layernorm,
+    layernorm_back,
+)
 
 
 @dataclass(frozen=True)
@@ -77,3 +86,32 @@ def forward(params: dict, cfg: Config, ids: np.ndarray):
     h, lnf = layernorm(x, params["lnf.g"], params["lnf.b"])
     logits = h @ params["tok"].T
     return logits, (ids, caches, lnf, h)
+
+
+def loss_and_grads(params: dict, cfg: Config, x: np.ndarray, y: np.ndarray):
+    """Mean cross-entropy of predicting y from x, and its gradient for every weight."""
+    logits, (ids, caches, lnf, h) = forward(params, cfg, x)
+    loss, ce = cross_entropy(logits, y)
+    grads = {k: np.zeros_like(v) for k, v in params.items()}
+    dlogits = cross_entropy_back(ce)
+    grads["tok"] += np.einsum("btv,btd->vd", dlogits, h)  # the tied output layer
+    dx, grads["lnf.g"], grads["lnf.b"] = layernorm_back(dlogits @ params["tok"], lnf)
+    for i in reversed(range(cfg.layers)):
+        ln1, att, ln2, h2, gl, g = caches[i]
+        # MLP branch: x = x + gelu(h2 @ up + up_b) @ down + down_b
+        grads[f"{i}.mlp.down"] = np.einsum("btf,btd->fd", g, dx)
+        grads[f"{i}.mlp.down_b"] = dx.sum((0, 1))
+        du = gelu_back(dx @ params[f"{i}.mlp.down"].T, gl)
+        grads[f"{i}.mlp.up"] = np.einsum("btd,btf->df", h2, du)
+        grads[f"{i}.mlp.up_b"] = du.sum((0, 1))
+        dh, grads[f"{i}.ln2.g"], grads[f"{i}.ln2.b"] = layernorm_back(
+            du @ params[f"{i}.mlp.up"].T, ln2
+        )
+        dx = dx + dh
+        # Attention branch: x = x + attention(layernorm(x))
+        da, grads[f"{i}.attn.qkv"], grads[f"{i}.attn.out"] = attention_back(dx, att)
+        dh, grads[f"{i}.ln1.g"], grads[f"{i}.ln1.b"] = layernorm_back(da, ln1)
+        dx = dx + dh
+    np.add.at(grads["tok"], ids, dx)
+    grads["pos"][: ids.shape[1]] = dx.sum(0)
+    return loss, grads

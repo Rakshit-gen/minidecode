@@ -1,8 +1,9 @@
 import numpy as np
 import pytest
+from gradcheck import close, numeric
 
 from minidecode.layers import cross_entropy
-from minidecode.model import Config, count, forward, init
+from minidecode.model import Config, count, forward, init, loss_and_grads
 
 CFG = Config(vocab=11, ctx=8, dim=16, layers=2, heads=4)
 
@@ -28,3 +29,16 @@ def test_bad_configs_and_inputs():
         Config(vocab=5, dim=16, heads=3)
     with pytest.raises(ValueError, match="longer than the context of 8"):
         forward(init(CFG), CFG, np.zeros((1, 9), dtype=np.int32))
+
+
+def test_every_gradient_matches_finite_differences():
+    cfg = Config(vocab=7, ctx=6, dim=8, layers=2, heads=2)
+    p = init(cfg, seed=1, dtype=np.float64)
+    rng = np.random.default_rng(2)
+    for k in p:  # move norms and biases off their initial 1s and 0s
+        p[k] += rng.normal(size=p[k].shape) * 0.1
+    x, y = rng.integers(0, 7, (2, 5)), rng.integers(0, 7, (2, 5))
+    _, grads = loss_and_grads(p, cfg, x, y)
+    for name in p:
+        want = numeric(lambda: loss_and_grads(p, cfg, x, y)[0], p[name])
+        assert close(grads[name], want), name
