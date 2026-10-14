@@ -46,6 +46,11 @@ class Run:
         return self.busy / self.offered if self.offered else 0.0
 
     @property
+    def mean_first_token(self) -> float:
+        """Seconds from the start of the run to a request's first token, averaged."""
+        return float(np.mean([r.first_token - self.start for r in self.requests]))
+
+    @property
     def mean_latency(self) -> float:
         """Seconds from the start of the run until a request finished, averaged."""
         return float(np.mean([r.finished - self.start for r in self.requests]))

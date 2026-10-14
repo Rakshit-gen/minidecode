@@ -59,6 +59,9 @@ def test_schedule(tmp_path, capsys):
     assert main(["schedule", m, "--requests", "6", "--slots", "2"]) == 0
     out = capsys.readouterr().out.splitlines()
     assert out[0].startswith("6 requests") and out[2].startswith("static") and len(out) == 4
+    assert main(["schedule", m, "--requests", "6", "--slots", "2", "--header", "12:00:00 GET"]) == 0
+    out = capsys.readouterr().out
+    assert "continuous + prefix" in out and "reused" in out
 
 
 def test_spec(tmp_path, capsys):

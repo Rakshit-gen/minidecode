@@ -14,6 +14,7 @@ from .checkpoint import load, save
 from .corpus import generate
 from .generate import generate_cached, generate_naive
 from .model import count
+from .prefix import PrefixCache
 from .quality import report
 from .quant import quantize_params
 from .serve import Request, serve
@@ -117,18 +118,33 @@ def workload(n: int, longest: int, seed: int) -> list[tuple[list[int], int]]:
 
 def cmd_schedule(args) -> int:
     cfg, params, tok, _ = load(args.model)
-    prompt = list(tok.encode("\n"))
-    jobs = workload(args.requests, cfg.ctx - len(prompt), args.seed)
+    header = args.header.encode().decode("unicode_escape")
+
+    def prompt(i: int) -> list[int]:
+        # With a header, prompts share it and differ after it.
+        return list(tok.encode(f"{header}\n{i % 24:02}:" if header else "\n"))
+
+    longest = max(len(prompt(i)) for i in range(args.requests))
+    jobs = workload(args.requests, cfg.ctx - longest, args.seed)
     print(f"{len(jobs)} requests, {sum(n for _, n in jobs)} tokens, {args.slots} slots")
-    print(f"{'policy':12} {'time':>8} {'tokens/s':>9} {'steps':>6} {'busy':>6} {'mean done':>10}")
-    for policy in ("static", "continuous"):
-        reqs = [Request(i, prompt, n) for i, n in jobs]
-        serve(params, cfg, [Request(0, prompt, 2)], args.slots, policy)  # warm up
-        r = serve(params, cfg, reqs, args.slots, policy)
+    print(
+        f"{'policy':22} {'time':>8} {'tokens/s':>9} {'steps':>6} {'busy':>6}"
+        f" {'first token':>12} {'done':>8}"
+    )
+    runs = [("static", "static", None), ("continuous", "continuous", None)]
+    if header:
+        runs.append(("continuous + prefix", "continuous", PrefixCache(cfg)))
+    for name, policy, prefix in runs:
+        reqs = [Request(i, prompt(i), n) for i, n in jobs]
+        serve(params, cfg, [Request(0, prompt(0), 2)], args.slots, policy)  # warm up
+        r = serve(params, cfg, reqs, args.slots, policy, prefix=prefix)
         print(
-            f"{policy:12} {r.seconds * 1000:6.0f}ms {r.tokens / r.seconds:9.0f} {r.steps:6}"
-            f" {r.utilisation:6.0%} {r.mean_latency * 1000:8.0f}ms"
+            f"{name:22} {r.seconds * 1000:6.0f}ms {r.tokens / r.seconds:9.0f} {r.steps:6}"
+            f" {r.utilisation:6.0%} {r.mean_first_token * 1000:10.1f}ms"
+            f" {r.mean_latency * 1000:6.0f}ms"
         )
+        if prefix is not None:
+            print(f"{'':22} reused {prefix.reused_tokens} prompt tokens in {prefix.hits} hits")
     return 0
 
 
@@ -226,6 +242,7 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--requests", type=int, default=64)
     s.add_argument("--slots", type=int, default=8)
     s.add_argument("--seed", type=int, default=0)
+    s.add_argument("--header", default="", help="a prompt start every request shares")
     s.set_defaults(func=cmd_schedule)
 
     s = sub.add_parser("spec", help="time speculative decoding with a draft model")
