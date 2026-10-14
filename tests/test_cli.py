@@ -77,3 +77,10 @@ def test_spec(tmp_path, capsys):
     assert main(["spec", m, d, "-k", "2"]) == 0
     out = capsys.readouterr().out
     assert "speculative k=2" in out and "tokens per target pass" in out
+
+
+def test_serve_command_is_wired_up():
+    from minidecode.cli import parser
+
+    args = parser().parse_args(["serve", "m.npz", "--port", "0", "--slots", "2"])
+    assert (args.port, args.slots, args.func.__name__) == (0, 2, "cmd_serve")

@@ -33,7 +33,7 @@ def test_continuous_keeps_slots_busier_than_static():
 
 
 def test_requests_that_cannot_fit_are_refused():
-    with pytest.raises(ValueError, match="more than the context"):
+    with pytest.raises(ValueError, match="over the context"):
         serve(P, CFG, [Request(0, [1] * 10, 20)], slots=1)
     with pytest.raises(ValueError, match="unknown policy"):
         serve(P, CFG, [], slots=1, policy="fifo")

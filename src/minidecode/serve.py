@@ -87,7 +87,10 @@ class Engine:
 
     def submit(self, r: Request) -> None:
         if len(r.prompt) + r.max_new > self.cfg.ctx:
-            raise ValueError(f"request {r.id} needs more than the context of {self.cfg.ctx}")
+            raise ValueError(
+                f"a {len(r.prompt)} token prompt plus {r.max_new} new tokens is over the"
+                f" context of {self.cfg.ctx}"
+            )
         if not r.prompt or r.max_new < 1:
             raise ValueError(f"request {r.id} needs a prompt and max_new of at least 1")
         self.waiting.append(r)

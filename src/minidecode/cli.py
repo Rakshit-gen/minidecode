@@ -174,6 +174,25 @@ def cmd_schedule(args) -> int:
     return 0
 
 
+def cmd_serve(args) -> int:
+    from .server import make_server
+
+    cfg, params, tok, _ = load(args.model)
+    httpd = make_server(
+        params, cfg, tok, args.host, args.port, slots=args.slots, temperature=args.temperature
+    )
+    host, port = httpd.server_address[:2]
+    print(f"serving {args.model} on http://{host}:{port} with {args.slots} slots", flush=True)
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        httpd.server_close()
+        httpd.worker.stop()
+    return 0
+
+
 def cmd_spec(args) -> int:
     tcfg, tparams, ttok, _ = load(args.model)
     dcfg, dparams, dtok, _ = load(args.draft)
@@ -272,6 +291,14 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--seed", type=int, default=0)
     s.add_argument("--header", default="", help="a prompt start every request shares")
     s.set_defaults(func=cmd_schedule)
+
+    s = sub.add_parser("serve", help="answer POST /generate over HTTP")
+    s.add_argument("model")
+    s.add_argument("--host", default="127.0.0.1")
+    s.add_argument("--port", type=int, default=8000)
+    s.add_argument("--slots", type=int, default=8)
+    s.add_argument("-t", "--temperature", type=float, default=0.8)
+    s.set_defaults(func=cmd_serve)
 
     s = sub.add_parser("spec", help="time speculative decoding with a draft model")
     s.add_argument("model", help="the target model")
