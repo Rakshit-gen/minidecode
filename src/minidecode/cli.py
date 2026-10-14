@@ -51,7 +51,9 @@ def cmd_generate(args) -> int:
     cfg, params, tok, _ = load(args.model)
     rng = np.random.default_rng(args.seed)
     prompt = tok.encode(args.prompt.encode().decode("unicode_escape"))
-    out = generate_cached(params, cfg, prompt, args.chars, rng, args.temperature, args.top_k)
+    out = generate_cached(
+        params, cfg, prompt, args.chars, rng, args.temperature, args.top_k, args.top_p
+    )
     print(tok.decode(out), end="" if args.chars and tok.decode(out[-1:]) == "\n" else "\n")
     return 0
 
@@ -216,6 +218,7 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("-n", "--chars", type=int, default=400)
     s.add_argument("-t", "--temperature", type=float, default=1.0)
     s.add_argument("-k", "--top-k", type=int, default=0)
+    s.add_argument("--top-p", type=float, default=1.0)
     s.add_argument("--seed", type=int, default=0)
     s.set_defaults(func=cmd_generate)
 
