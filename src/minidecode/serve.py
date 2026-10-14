@@ -93,6 +93,8 @@ class Engine:
             )
         if not r.prompt or r.max_new < 1:
             raise ValueError(f"request {r.id} needs a prompt and max_new of at least 1")
+        if r.temperature is not None and not r.temperature >= 0:
+            raise ValueError(f"temperature must be 0 or more, not {r.temperature}")
         self.waiting.append(r)
 
     @property

@@ -58,6 +58,8 @@ def test_bad_requests_get_400(url):
     assert post(url, {"prompt": "zz", "max_new": 3})[0] == 400  # not in the vocabulary
     assert post(url, {"prompt": "1", "max_new": 99})[0] == 400  # past the context
     assert post(url, {"max_new": 3})[0] == 400
+    assert post(url, {"prompt": "1", "temperature": -1})[0] == 400
+    assert post(url, {"prompt": "1", "temperature": "nan"})[0] == 400
 
 
 def test_huge_body_is_refused_without_reading_it(url):
