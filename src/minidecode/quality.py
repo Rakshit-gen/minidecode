@@ -32,10 +32,20 @@ def sample(params, cfg, tok, chars: int = 2000, seed: int = 0, temperature: floa
     return tok.decode(out)
 
 
-def report(params, cfg, tok, chars: int = 2000, seed: int = 0) -> dict:
-    text = sample(params, cfg, tok, chars, seed)
+def report(params, cfg, tok, chars: int = 2000, seed: int = 0, seeds: int = 1) -> dict:
+    """Valid lines are pooled over `seeds` samples (seed, seed+1, ...): one
+    sample of a few dozen lines moves by several points from seed to seed."""
+    valid = lines = 0
+    rates = []
+    for s in range(seed, seed + seeds):
+        text = sample(params, cfg, tok, chars, s)
+        n = text.count("\n")
+        rates.append(valid_rate(text))
+        valid += round(rates[-1] * n)
+        lines += n
     return {
         "bits_per_char": round(bits_per_char(params, cfg, tok), 4),
-        "valid_lines": round(valid_rate(text), 4),
-        "lines_checked": text.count("\n"),
+        "valid_lines": round(valid / lines, 4) if lines else 0.0,
+        "lines_checked": lines,
+        "valid_lines_range": [round(min(rates), 4), round(max(rates), 4)],
     }

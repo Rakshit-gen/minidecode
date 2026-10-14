@@ -31,6 +31,7 @@ def test_generate_and_eval(tmp_path, capsys):
         "bits_per_char",
         "valid_lines",
         "lines_checked",
+        "valid_lines_range",
     }
     assert main(["generate", m, "-p", "€"]) == 2
 

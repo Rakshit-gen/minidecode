@@ -71,12 +71,14 @@ def cmd_generate(args) -> int:
 
 def cmd_eval(args) -> int:
     cfg, params, tok, meta = load(args.model)
-    r = report(params, cfg, tok, chars=args.chars, seed=args.seed)
+    r = report(params, cfg, tok, chars=args.chars, seed=args.seed, seeds=args.seeds)
     if args.json:
         print(json.dumps(r))
     else:
         print(f"bits per char {r['bits_per_char']:.3f}  (held-out logs)")
-        print(f"valid lines   {r['valid_lines']:.1%}  ({r['lines_checked']} sampled lines)")
+        lo, hi = r["valid_lines_range"]
+        spread = f", {lo:.1%} to {hi:.1%} across seeds" if args.seeds > 1 else ""
+        print(f"valid lines   {r['valid_lines']:.1%}  ({r['lines_checked']} sampled lines{spread})")
     return 0
 
 
@@ -282,6 +284,7 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("model")
     s.add_argument("-n", "--chars", type=int, default=2000, help="characters to sample")
     s.add_argument("--seed", type=int, default=0)
+    s.add_argument("--seeds", type=int, default=1, help="pool this many samples")
     s.add_argument("--json", action="store_true")
     s.set_defaults(func=cmd_eval)
 
