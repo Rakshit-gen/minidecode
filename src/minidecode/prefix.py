@@ -37,22 +37,16 @@ class PrefixCache:
             raise ValueError("prefill needs an empty cache")
         prompt = tuple(int(t) for t in prompt)
         key = self._longest(prompt)
-        if key is not None and len(key) == len(prompt):
-            # A prefix that is the whole prompt: its logits are cached too.
+        if key is None:
+            self.misses += 1
+        else:
             k, v, logits = self.entries[key]
             self._copy_in(cache, k, v, len(key))
             self.entries.move_to_end(key)
             self.hits += 1
             self.reused_tokens += len(key)
-            return logits
-        if key is not None:
-            k, v, _ = self.entries[key]
-            self._copy_in(cache, k, v, len(key))
-            self.entries.move_to_end(key)
-            self.hits += 1
-            self.reused_tokens += len(key)
-        else:
-            self.misses += 1
+            if len(key) == len(prompt):  # the whole prompt: its logits are cached too
+                return logits
         logits = step(params, self.cfg, np.array([prompt[cache.length :]]), cache)[0, -1]
         if len(prompt) >= self.min_length:
             n = len(prompt)

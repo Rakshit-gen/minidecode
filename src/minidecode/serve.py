@@ -59,6 +59,7 @@ def serve(
     policy: str = "continuous",
     temperature: float = 0.0,
     seed: int = 0,
+    prefix=None,
 ) -> Run:
     """Run every request to completion. All requests are queued at the start."""
     if policy not in ("continuous", "static"):
@@ -81,7 +82,7 @@ def serve(
                     break
                 r = waiting.popleft()
                 r.started = time.perf_counter()
-                logits[i] = cache.prefill(params, i, r.prompt)
+                logits[i] = cache.prefill(params, i, r.prompt, prefix)
                 owner[i] = r
         active = np.array([r is not None for r in owner])
         ids = pick(logits, rng, temperature)

@@ -26,17 +26,21 @@ class BatchCache:
     def slots(self) -> int:
         return len(self.lengths)
 
-    def prefill(self, params, slot: int, prompt) -> np.ndarray:
+    def prefill(self, params, slot: int, prompt, prefix=None) -> np.ndarray:
         """Run a prompt into one slot, replacing whatever it held; returns the
-        logits for the token after it."""
+        logits for the token after it. With a PrefixCache, a known start of
+        the prompt is copied instead of recomputed."""
         one = KVCache(self.cfg)
-        logits = step(params, self.cfg, np.asarray(prompt)[None], one)
+        if prefix is not None:
+            last = prefix.prefill(params, prompt, one)
+        else:
+            last = step(params, self.cfg, np.asarray(prompt)[None], one)[0, -1]
         n = one.length
         for i in range(self.cfg.layers):
             self.k[i][slot, :, :n] = one.k[i][0, :, :n]
             self.v[i][slot, :, :n] = one.v[i][0, :, :n]
         self.lengths[slot] = n
-        return logits[0, -1]
+        return last
 
 
 def decode(params, cfg: Config, ids: np.ndarray, cache: BatchCache, active=None) -> np.ndarray:
