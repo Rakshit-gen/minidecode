@@ -1,7 +1,10 @@
+import numpy as np
 import pytest
 
 from minidecode.generate import generate_cached
+from minidecode.kvcache import KVCache, step
 from minidecode.model import Config, init
+from minidecode.sampling import probs
 from minidecode.spec import Stats, speculative
 
 TC = Config(vocab=6, ctx=40, dim=16, layers=2, heads=2)
@@ -42,3 +45,23 @@ def test_mismatched_vocabularies_and_overflow_are_refused():
         speculative(T, (init(other), other), [1], 5)
     with pytest.raises(ValueError, match="fit in both contexts"):
         speculative(T, D, [1], 38, k=4)
+
+
+def test_sampling_keeps_the_targets_distribution():
+    t = (sharpen(TARGET[0], 3.0), TC)
+    d = (sharpen(DRAFT[0], 3.0), DC)
+    prompt = [1, 2]
+    # Exact target distribution of the first two tokens.
+    cache = KVCache(TC)
+    p1 = probs(step(t[0], TC, np.array([prompt]), cache)[0, -1])
+    p2 = np.zeros(6)
+    for a in range(6):
+        c = KVCache(TC)
+        p2 += p1[a] * probs(step(t[0], TC, np.array([[*prompt, a]]), c)[0, -1])
+    rng = np.random.default_rng(0)
+    runs = np.array(
+        [speculative(t, d, prompt, 2, k=3, temperature=1.0, rng=rng) for _ in range(3000)]
+    )
+    for i, p in enumerate((p1, p2)):
+        freq = np.bincount(runs[:, i], minlength=6) / len(runs)
+        assert 0.5 * np.abs(freq - p).sum() < 0.03, (i, freq, p)
