@@ -39,3 +39,17 @@ def test_oldest_entries_are_dropped_and_short_prompts_not_stored():
     cache.length = 1
     with pytest.raises(ValueError, match="empty cache"):
         pc.prefill(P, [1], cache)
+
+
+def test_a_shared_header_is_found_through_block_entries():
+    pc = PrefixCache(CFG, block=4)
+    header = [1, 2, 3, 4, 5, 6, 7, 8, 0]
+    for tail in (1, 2, 3):
+        cache = KVCache(CFG)
+        logits = pc.prefill(P, [*header, tail], cache)
+        assert np.allclose(logits, plain([*header, tail])[0], atol=1e-5)
+    assert (pc.misses, pc.hits, pc.reused_tokens) == (1, 2, 16)  # 8 header tokens, twice
+    # A prompt equal to a block entry: no stored logits, so the last token is rerun.
+    cache = KVCache(CFG)
+    assert np.allclose(pc.prefill(P, header[:8], cache), plain(header[:8])[0], atol=1e-5)
+    assert pc.reused_tokens == 23
