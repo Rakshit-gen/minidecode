@@ -16,6 +16,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from .prefix import PrefixCache
 from .serve import Engine, Request
 
+MAX_BODY = 64 * 1024  # a prompt can't be longer than the context anyway
+
 
 class Worker:
     def __init__(self, params, cfg, tok, slots=8, temperature=0.0, seed=0):
@@ -89,8 +91,12 @@ def handler(worker: Worker):
         def do_POST(self):
             if self.path != "/generate":
                 return self._send(404, {"error": "not found"})
+            length = int(self.headers.get("Content-Length") or 0)
+            if length > MAX_BODY:
+                self.close_connection = True
+                return self._send(413, {"error": f"body over {MAX_BODY} bytes"})
             try:
-                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+                body = json.loads(self.rfile.read(length))
                 temperature = body.get("temperature")
                 start = time.perf_counter()
                 r = worker.submit(

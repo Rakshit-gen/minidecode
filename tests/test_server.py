@@ -58,3 +58,11 @@ def test_bad_requests_get_400(url):
     assert post(url, {"prompt": "zz", "max_new": 3})[0] == 400  # not in the vocabulary
     assert post(url, {"prompt": "1", "max_new": 99})[0] == 400  # past the context
     assert post(url, {"max_new": 3})[0] == 400
+
+
+def test_huge_body_is_refused_without_reading_it(url):
+    req = urllib.request.Request(url + "/generate", b"{}", method="POST")
+    req.add_header("Content-Length", str(10**9))
+    with pytest.raises(urllib.error.HTTPError) as e:
+        urllib.request.urlopen(req, timeout=10)
+    assert e.value.code == 413
