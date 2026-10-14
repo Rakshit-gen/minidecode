@@ -1,0 +1,31 @@
+[project]
+name = "minidecode"
+version = "0.1.0"
+description = "A small transformer inference engine in numpy: KV cache, quantization, batching and speculative decoding, each measured"
+readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "rakshit-gen", email = "sisodiarakshit456@gmail.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.0",
+]
+
+[project.scripts]
+minidecode = "minidecode.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.12.17,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
