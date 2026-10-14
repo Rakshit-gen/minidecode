@@ -92,6 +92,7 @@ def cmd_info(args) -> int:
         print(
             f"trained      {meta['steps']} steps on {meta.get('lines', '?')} lines in"
             f" {meta.get('seconds', 0):.1f} s, val loss {meta['val_loss']:.3f}"
+            + (" (before quantizing)" if "bits" in meta else "")
         )
     return 0
 
