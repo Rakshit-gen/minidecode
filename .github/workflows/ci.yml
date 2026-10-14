@@ -1,0 +1,28 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          python-version: ${{ matrix.python }}
+      - run: uvx ruff check .
+      - run: uvx ruff format --check .
+      - run: uv run --group dev pytest -q
+      - name: end to end on a tiny model
+        run: |
+          uv run minidecode train -o m.npz --lines 2000 --steps 50 -q
+          uv run minidecode generate m.npz -n 60 --seed 1
+          uv run minidecode quantize m.npz -o q.npz --bits 8 --no-eval
+          uv run minidecode info q.npz
+          uv run minidecode bench m.npz -n 20 --batch 1 4
