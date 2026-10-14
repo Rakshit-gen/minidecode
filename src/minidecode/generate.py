@@ -20,9 +20,19 @@ def generate_naive(params, cfg: Config, prompt, steps: int, rng=None, temperatur
 
 
 def generate_cached(
-    params, cfg: Config, prompt, steps: int, rng=None, temperature=1.0, top_k=0, top_p=1.0
+    params,
+    cfg: Config,
+    prompt,
+    steps: int,
+    rng=None,
+    temperature=1.0,
+    top_k=0,
+    top_p=1.0,
+    stop: int | None = None,
+    stop_count: int = 1,
 ):
-    """Decode with a KV cache: the prompt once, then one token per step.
+    """Decode with a KV cache: the prompt once, then one token per step, for at
+    most `steps` tokens, or until token `stop` has come out `stop_count` times.
 
     Positions are learned, so the cache can't simply slide. When it is full,
     the last half of the context is run through again as a fresh prompt, and
@@ -31,9 +41,11 @@ def generate_cached(
     ids = list(prompt)
     cache = KVCache(cfg)
     logits = step(params, cfg, np.array(ids[-cfg.ctx :])[None], cache)[0, -1]
+    seen = 0
     for n in range(steps):
         ids.append(int(pick(logits, rng, temperature, top_k, top_p)))
-        if n + 1 == steps:
+        seen += ids[-1] == stop
+        if n + 1 == steps or seen == stop_count:
             break
         if cache.length == cfg.ctx:
             cache = KVCache(cfg)

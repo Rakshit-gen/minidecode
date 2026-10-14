@@ -23,3 +23,11 @@ def test_cached_matches_naive_within_the_context():
 def test_cached_keeps_going_past_a_full_cache():
     out = generate_cached(P, CFG, [1, 2, 3], 40, np.random.default_rng(1))
     assert len(out) == 40
+
+
+def test_stops_after_the_stop_token_count():
+    free = generate_cached(P, CFG, [1], 60, np.random.default_rng(2))
+    stop = free[5]
+    want = [i for i, t in enumerate(free) if t == stop][:2]
+    got = generate_cached(P, CFG, [1], 60, np.random.default_rng(2), stop=stop, stop_count=2)
+    assert got == free[: want[1] + 1]

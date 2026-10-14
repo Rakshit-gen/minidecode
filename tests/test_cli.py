@@ -24,6 +24,8 @@ def test_generate_and_eval(tmp_path, capsys):
     capsys.readouterr()
     assert main(["generate", m, "-n", "30", "-t", "0", "-p", "12:0"]) == 0
     assert len(capsys.readouterr().out.rstrip("\n")) <= 30
+    assert main(["generate", m, "-n", "300", "--lines", "2", "-p", "\\n"]) == 0
+    assert capsys.readouterr().out.count("\n") <= 2
     assert main(["eval", m, "-n", "100", "--json"]) == 0
     assert set(json.loads(capsys.readouterr().out)) == {
         "bits_per_char",
