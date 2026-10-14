@@ -155,9 +155,11 @@ def cmd_quantize(args) -> int:
     if not args.no_eval:
         _, qparams, _, _ = load(args.output)
         for name, p in (("float32", params), (f"int{args.bits}", qparams)):
-            r = report(p, cfg, tok, chars=args.chars)
+            r = report(p, cfg, tok, chars=args.chars, seeds=args.seeds)
+            lo, hi = r["valid_lines_range"]
             print(
                 f"{name:8} bits/char {r['bits_per_char']:.4f}  valid lines {r['valid_lines']:.1%}"
+                f" ({lo:.1%} to {hi:.1%})"
             )
     return 0
 
@@ -321,6 +323,7 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("-o", "--output", required=True)
     s.add_argument("--bits", type=int, choices=[8, 4], default=8)
     s.add_argument("-n", "--chars", type=int, default=2000, help="characters to sample")
+    s.add_argument("--seeds", type=int, default=5, help="samples to pool for valid lines")
     s.add_argument("--no-eval", action="store_true", help="skip the quality comparison")
     s.set_defaults(func=cmd_quantize)
 
