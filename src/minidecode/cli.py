@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 import sys
 
 import numpy as np
@@ -13,6 +14,7 @@ from .corpus import generate
 from .generate import generate_cached, generate_naive
 from .model import count
 from .quality import report
+from .quant import quantize_params
 from .train import train
 
 
@@ -74,6 +76,23 @@ def cmd_bench(args) -> int:
     return 0
 
 
+def cmd_quantize(args) -> int:
+    cfg, params, tok, meta = load(args.model)
+    if "bits" in meta:
+        raise ValueError(f"{args.model} is already quantized")
+    save(args.output, cfg, quantize_params(params, args.bits), tok, meta)
+    before, after = os.path.getsize(args.model), os.path.getsize(args.output)
+    print(f"{args.model}: {before / 1024:.0f} KiB -> {args.output}: {after / 1024:.0f} KiB")
+    if not args.no_eval:
+        _, qparams, _, _ = load(args.output)
+        for name, p in (("float32", params), (f"int{args.bits}", qparams)):
+            r = report(p, cfg, tok, chars=args.chars)
+            print(
+                f"{name:8} bits/char {r['bits_per_char']:.4f}  valid lines {r['valid_lines']:.1%}"
+            )
+    return 0
+
+
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="minidecode", description="A small transformer inference engine in numpy."
@@ -115,6 +134,14 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("model")
     s.add_argument("-n", "--tokens", type=int, default=200)
     s.set_defaults(func=cmd_bench)
+
+    s = sub.add_parser("quantize", help="write an int8 or int4 copy of a model")
+    s.add_argument("model")
+    s.add_argument("-o", "--output", required=True)
+    s.add_argument("--bits", type=int, choices=[8, 4], default=8)
+    s.add_argument("-n", "--chars", type=int, default=2000, help="characters to sample")
+    s.add_argument("--no-eval", action="store_true", help="skip the quality comparison")
+    s.set_defaults(func=cmd_quantize)
     return p
 
 

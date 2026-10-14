@@ -39,3 +39,13 @@ def test_bench_runs(tmp_path, capsys):
     capsys.readouterr()
     assert main(["bench", m, "-n", "10"]) == 0
     assert "kv cache" in capsys.readouterr().out
+
+
+def test_quantize(tmp_path, capsys):
+    m, q = str(tmp_path / "m.npz"), str(tmp_path / "q.npz")
+    main(["train", "-o", m, "--lines", "800", "--steps", "2", "--dim", "32", "--heads", "2", "-q"])
+    capsys.readouterr()
+    assert main(["quantize", m, "-o", q, "--bits", "4", "-n", "100"]) == 0
+    out = capsys.readouterr().out
+    assert "float32  bits/char" in out and "int4     bits/char" in out
+    assert main(["quantize", q, "-o", m + "2"]) == 2
