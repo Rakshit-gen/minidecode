@@ -33,10 +33,12 @@ def timed(name: str, tokens: int, fn: Callable[[], object], repeat: int = 3) -> 
 
 def table(rows: list[Timing], base: Timing | None = None) -> str:
     base = base or rows[0]
+    # Speedup is throughput against the first row, so rows that produce
+    # different numbers of tokens (batch sizes) compare fairly.
     out = [f"{'':24} {'tokens/s':>10} {'time':>9} {'speedup':>8}"]
     for r in rows:
         out.append(
             f"{r.name:24} {r.tokens_per_s:10.0f} {r.seconds * 1000:7.1f}ms"
-            f" {base.seconds / r.seconds:7.2f}x"
+            f" {r.tokens_per_s / base.tokens_per_s:7.2f}x"
         )
     return "\n".join(out) + "\n"

@@ -7,3 +7,8 @@ def test_table_and_timing():
     assert len(calls) == 3 and t.seconds >= 0  # one warm-up run plus two timed
     out = table([Timing("slow", 100, 2.0), Timing("fast", 100, 0.5)])
     assert "slow" in out and out.splitlines()[2].endswith("4.00x")
+
+
+def test_speedup_is_throughput_not_time():
+    out = table([Timing("one", 10, 1.0), Timing("batch", 40, 2.0)])
+    assert out.splitlines()[2].endswith("2.00x")  # 4x the tokens in 2x the time
