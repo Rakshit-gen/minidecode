@@ -17,6 +17,7 @@ from .model import count
 from .quality import report
 from .quant import quantize_params
 from .serve import Request, serve
+from .spec import Stats, speculative
 from .train import train
 
 
@@ -131,6 +132,42 @@ def cmd_schedule(args) -> int:
     return 0
 
 
+def cmd_spec(args) -> int:
+    tcfg, tparams, ttok, _ = load(args.model)
+    dcfg, dparams, dtok, _ = load(args.draft)
+    if ttok.chars != dtok.chars:
+        raise ValueError("draft and target were trained with different vocabularies")
+    prompt = list(ttok.encode("\n"))
+    n = min(tcfg.ctx, dcfg.ctx) - len(prompt) - max(args.k) - 1
+    rows = [timed("target alone", n, lambda: generate_cached(tparams, tcfg, prompt, n, None, 0))]
+    rows.append(timed("draft alone", n, lambda: generate_cached(dparams, dcfg, prompt, n, None, 0)))
+    notes = []
+    for k in args.k:
+        stats = Stats()
+
+        def run(k=k, stats=stats):
+            speculative(
+                (tparams, tcfg),
+                (dparams, dcfg),
+                prompt,
+                n,
+                k,
+                args.temperature,
+                np.random.default_rng(0),
+                stats,
+            )
+
+        rows.append(timed(f"speculative k={k}", n, run))
+        notes.append(
+            f"k={k}: {stats.acceptance:.0%} of guesses accepted,"
+            f" {stats.tokens_per_call:.2f} tokens per target pass"
+        )
+    print(f"{n} tokens, temperature {args.temperature:g}, best of 3")
+    print(table(rows), end="")
+    print("\n".join(notes))
+    return 0
+
+
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="minidecode", description="A small transformer inference engine in numpy."
@@ -190,6 +227,13 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--slots", type=int, default=8)
     s.add_argument("--seed", type=int, default=0)
     s.set_defaults(func=cmd_schedule)
+
+    s = sub.add_parser("spec", help="time speculative decoding with a draft model")
+    s.add_argument("model", help="the target model")
+    s.add_argument("draft", help="a smaller model trained on the same text")
+    s.add_argument("-k", type=int, nargs="+", default=[2, 4, 6], help="guesses per pass")
+    s.add_argument("-t", "--temperature", type=float, default=0.0)
+    s.set_defaults(func=cmd_spec)
     return p
 
 
